@@ -1,8 +1,9 @@
 from __future__ import annotations
-import os, json
+import os, json, datetime
 import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
+import numpy as np
 
 
 from src.io_loader import load_from_bytes, load_from_url, SUPPORTED_EXTS
@@ -33,6 +34,19 @@ def _load(name: str, data: bytes, sheet: str|None):
 def _load_url(url: str, sheet: str|None):
     return load_from_url(url, sheet)
 
+def _json_safe_value(v):
+    if isinstance(v, (pd.Timestamp, datetime.datetime, datetime.date)):
+        return v.isoformat()
+    if isinstance(v, (np.integer, np.floating)):
+        return v.item()
+    return v
+
+def df_to_records_jsonsafe(df: pd.DataFrame):
+    recs = df.to_dict(orient="records")
+    for r in recs:
+        for k, v in list(r.items()):
+            r[k] = _json_safe_value(v)
+    return recs
 if run_btn:
     df = None
     try:
@@ -78,9 +92,13 @@ if run_btn:
                 "encoding": {},
                 "data": {"name": "data"},
             }
-            if enc.get("x"): spec["encoding"]["x"] = {"field": enc["x"], "type": "temporal" if str(df[enc["x"]].dtype).startswith("datetime64") else "nominal"}
-            if enc.get("y"): spec["encoding"]["y"] = {"field": enc["y"], "type": "quantitative"}
-            if enc.get("color"): spec["encoding"]["color"] = {"field": enc["color"], "type": "nominal"}
+            if enc.get("x"):
+                x_type = "temporal" if pd.api.types.is_datetime64_any_dtype(df[enc["x"]]) else "nominal"
+                spec["encoding"]["x"] = {"field": enc["x"], "type": x_type}
+            if enc.get("y"):
+                spec["encoding"]["y"] = {"field": enc["y"], "type": "quantitative"}
+            if enc.get("color"):
+                spec["encoding"]["color"] = {"field": enc["color"], "type": "nominal"}
             plan = {
                 "chart_type": cand["chart_type"],
                 "encodings": enc,
@@ -88,8 +106,13 @@ if run_btn:
                 "rationale": "Fallback heuristic: selected first viable candidate based on detected types.",
             }
 
+        plan = {
+            "chart_type": cand["chart_type"],
+            "encodings": enc,
+            "vegalite_spec": spec,
+            "rationale": "Fallback heuristic: selected first viable candidate based on detected types.",
+        }
         plan, notices = audit_and_fix(plan, df)
-
         spec = plan["vegalite_spec"].copy()
         spec["data"] = {"values": df.to_dict(orient="records")}
         

@@ -34,7 +34,7 @@ SCHEMA = {
         "encodings": {"type": "object"},
         "vegalite_spec": {"type": "object"},
         "rationale": {"type": "string"}
-},
+    },
     "required": ["chart_type", "encodings", "vegalite_spec", "rationale"]
 }
 
@@ -47,12 +47,16 @@ def call_gemini(task: str, profile: Dict[str, Any], candidates: Any) -> VizPlan 
         return None
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(DEFAULT_MODEL)
-    payload = {"task": task, "profile": profile, "candidates": candidates, "json_schema": SCHEMA}
+    prompt = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"JSON schema (strict):\n{json.dumps(SCHEMA)}\n\n"
+        f"TASK:\n{task}\n\n"
+        f"PROFILE:\n{json.dumps(profile)}\n\n"
+        f"CANDIDATES:\n{json.dumps(candidates)}\n\n"
+        "Return ONLY JSON that matches the schema."
+    )
     resp = model.generate_content(
-        [
-        {"role": "system", "parts": [SYSTEM_PROMPT]},
-        {"role": "user", "parts": [json.dumps(payload)]},
-        ],
+        prompt,
         generation_config={"response_mime_type": "application/json"}
     )
     return VizPlan.model_validate_json(resp.text)
